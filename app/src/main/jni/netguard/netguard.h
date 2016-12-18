@@ -446,6 +446,8 @@ ssize_t write_tcp(const struct arguments *args, const struct tcp_session *cur,
 
 uint8_t char2nible(const char c);
 
+int containsAscii(uint8_t *data);
+
 void hex2bytes(const char *hex, uint8_t *buffer);
 
 jint get_uid_retry(const int version, const int protocol,

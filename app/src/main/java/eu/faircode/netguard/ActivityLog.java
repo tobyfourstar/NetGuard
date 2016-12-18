@@ -27,6 +27,7 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.preference.PreferenceManager;
 import android.support.v4.app.NavUtils;
 import android.support.v4.view.MenuItemCompat;
@@ -49,8 +50,10 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.text.SimpleDateFormat;
@@ -551,54 +554,84 @@ public class ActivityLog extends AppCompatActivity implements SharedPreferences.
         new AsyncTask<Object, Object, Throwable>() {
             @Override
             protected Throwable doInBackground(Object... objects) {
-                OutputStream out = null;
+                FileOutputStream out = null;
                 FileInputStream in = null;
                 try {
                     // Stop capture
                     ServiceSinkhole.setPcap(false, ActivityLog.this);
 
-                    Uri target = data.getData();
-                    if (data.hasExtra("org.openintents.extra.DIR_PATH"))
-                        target = Uri.parse(target + "/netguard.pcap");
-                    Log.i(TAG, "Export PCAP URI=" + target);
-                    out = getContentResolver().openOutputStream(target);
 
-                    File pcap = new File(getCacheDir(), "netguard.pcap");
-                    in = new FileInputStream(pcap);
+                    String filename = "netguard_" + new SimpleDateFormat("yyyyMMdd").format(new Date().getTime()) + ".pcap";
 
-                    int len;
-                    long total = 0;
-                    byte[] buf = new byte[4096];
-                    while ((len = in.read(buf)) > 0) {
-                        out.write(buf, 0, len);
-                        total += len;
+
+                    String state = Environment.getExternalStorageState();
+                    if (!Environment.MEDIA_MOUNTED.equals(state)) {
+                        return null;
+                    } else {
+                        //We use the Download directory for saving our .csv file.
+                        File exportDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                        if (!exportDir.exists()) {
+                            exportDir.mkdirs();
+                        }
+
+                        File file;
+
+
+                        PrintStream printStream = null;
+                        try {
+
+                            file = new File(exportDir, filename);
+                            file.createNewFile();
+                            out = new FileOutputStream(file);
+
+
+                            DatabaseHelper.getInstance(ActivityLog.this).exportLog(getApplicationContext());
+                            File pcap = new File(getCacheDir(), "netguard.pcap");
+                            in = new FileInputStream(pcap);
+
+                            int len;
+                            long total = 0;
+                            byte[] buf = new byte[4096];
+                            while ((len = in.read(buf)) > 0) {
+                                out.write(buf, 0, len);
+                                total += len;
+                            }
+                            Log.i(TAG, "Copied bytes=" + total);
+
+                            return null;
+
+                        } catch (Throwable ex) {
+                            Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
+
+                        } finally {
+                            if (out != null)
+                                try {
+                                    out.close();
+                                } catch (IOException ex) {
+                                    Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
+                                }
+                            if (in != null)
+                                try {
+                                    in.close();
+                                } catch (IOException ex) {
+                                    Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
+                                }
+
+                            // Resume capture
+                            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ActivityLog.this);
+                            if (prefs.getBoolean("pcap", false))
+                                ServiceSinkhole.setPcap(true, ActivityLog.this);
+                        }
                     }
-                    Log.i(TAG, "Copied bytes=" + total);
-
-                    return null;
-                } catch (Throwable ex) {
-                    Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
-                    return ex;
-                } finally {
-                    if (out != null)
-                        try {
-                            out.close();
-                        } catch (IOException ex) {
-                            Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
-                        }
-                    if (in != null)
-                        try {
-                            in.close();
-                        } catch (IOException ex) {
-                            Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
-                        }
-
-                    // Resume capture
-                    SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ActivityLog.this);
-                    if (prefs.getBoolean("pcap", false))
-                        ServiceSinkhole.setPcap(true, ActivityLog.this);
+                } catch (Exception ex1) {
+                    Log.e(TAG, ex1.toString() + "\n" + Log.getStackTraceString(ex1));
+                    return ex1;
                 }
+            return null;
             }
+
+
+
 
             @Override
             protected void onPostExecute(Throwable ex) {

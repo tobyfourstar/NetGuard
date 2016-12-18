@@ -196,7 +196,7 @@ public class ServiceSinkhole extends VpnService implements SharedPreferences.OnS
             r = "64";
         String f = prefs.getString("pcap_file_size", null);
         if (TextUtils.isEmpty(f))
-            f = "2";
+            f = "20";
         int record_size = Integer.parseInt(r);
         int file_size = Integer.parseInt(f) * 1024 * 1024;
         jni_pcap(pcap == null ? null : pcap.getAbsolutePath(), record_size, file_size);
@@ -544,6 +544,7 @@ public class ServiceSinkhole extends VpnService implements SharedPreferences.OnS
         }
 
         private void checkUpdate() {
+            /**
             StringBuilder json = new StringBuilder();
             HttpsURLConnection urlConnection = null;
             try {
@@ -587,6 +588,7 @@ public class ServiceSinkhole extends VpnService implements SharedPreferences.OnS
             } catch (JSONException ex) {
                 Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
             }
+            **/
         }
     }
 
@@ -620,6 +622,8 @@ public class ServiceSinkhole extends VpnService implements SharedPreferences.OnS
 
         private void log(Packet packet, int connection, boolean interactive) {
             // Get settings
+
+
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ServiceSinkhole.this);
             boolean log = prefs.getBoolean("log", false);
             boolean log_app = prefs.getBoolean("log_app", false);
@@ -629,9 +633,11 @@ public class ServiceSinkhole extends VpnService implements SharedPreferences.OnS
             // Get real name
             String dname = dh.getQName(packet.daddr);
 
+            String appName = getPackageManager().getNameForUid(packet.uid);
+            Log.i("LOG_PACKET", "" + packet+ ":" + dname + ":" + appName);
             // Traffic log
             if (log)
-                dh.insertLog(packet, dname, connection, interactive);
+                dh.insertLog(packet, dname, appName,connection, interactive);
 
             // Application log
             if (log_app && packet.uid >= 0 && !(packet.uid == 0 && packet.protocol == 17 && packet.dport == 53)) {
@@ -1482,6 +1488,15 @@ public class ServiceSinkhole extends VpnService implements SharedPreferences.OnS
     // Called from native code
     private Allowed isAddressAllowed(Packet packet) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+
+        if (packet.data.contains("ASCII")) {
+
+            logPacket(packet);
+            Allowed allowed = null;
+
+            return allowed;
+        } ;
+
 
         packet.allowed = false;
         if (prefs.getBoolean("filter", false)) {

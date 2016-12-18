@@ -20,7 +20,7 @@
 #include "netguard.h"
 
 FILE *pcap_file = NULL;
-size_t pcap_record_size = 64;
+size_t pcap_record_size = 2000;
 long pcap_file_size = 2 * 1024 * 1024;
 
 void write_pcap_hdr() {
@@ -40,7 +40,7 @@ void write_pcap_rec(const uint8_t *buffer, size_t length) {
     if (clock_gettime(CLOCK_REALTIME, &ts))
         log_android(ANDROID_LOG_ERROR, "clock_gettime error %d: %s", errno, strerror(errno));
 
-    size_t plen = (length < pcap_record_size ? length : pcap_record_size);
+    size_t plen = length;
     struct pcaprec_hdr_s pcap_rec;
 
     pcap_rec.ts_sec = (guint32_t) ts.tv_sec;

@@ -18,7 +18,12 @@ package eu.faircode.netguard;
 
     Copyright 2015-2016 by Marcel Bokhorst (M66B)
 */
-
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import android.content.Context;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
@@ -29,7 +34,11 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Message;
 import android.util.Log;
-
+import android.os.Environment;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
+import java.io.OutputStream;
+import java.io.FileWriter;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -37,11 +46,13 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import static eu.faircode.netguard.Util.*;
+
 public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String TAG = "NetGuard.Database";
 
     private static final String DB_NAME = "Netguard";
-    private static final int DB_VERSION = 20;
+    private static final int DB_VERSION = 22;
 
     private static boolean once = true;
     private static List<LogChangedListener> logChangedListeners = new ArrayList<>();
@@ -129,6 +140,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 ", daddr TEXT" +
                 ", dport INTEGER NULL" +
                 ", dname TEXT NULL" +
+                ", packageName TEXT NULL" +
                 ", uid INTEGER NULL" +
                 ", data TEXT" +
                 ", allowed INTEGER NULL" +
@@ -313,6 +325,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_access_daddr ON access(daddr)");
                 oldVersion = 20;
             }
+            if(oldVersion < 22) {
+                if (!columnExists(db, "log", "packageName"))
+                    db.execSQL("ALTER TABLE log ADD COLUMN packageName TEXT NULL");
+                 oldVersion = 22;
+            }
+
 
             if (oldVersion == DB_VERSION) {
                 db.setVersion(oldVersion);
@@ -330,7 +348,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     // Log
 
-    public void insertLog(Packet packet, String dname, int connection, boolean interactive) {
+    public void insertLog(Packet packet, String dname, String packageName, int connection, boolean interactive) {
         mLock.writeLock().lock();
         try {
             SQLiteDatabase db = this.getWritableDatabase();
@@ -363,6 +381,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     cv.putNull("dname");
                 else
                     cv.put("dname", dname);
+
+                cv.put("packageName",packageName);
 
                 cv.put("data", packet.data);
 
@@ -1033,4 +1053,137 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public interface ForwardChangedListener {
         void onChanged();
     }
+
+    public boolean exportLog( Context context) {
+
+        String filename = "netguard_log_" + new SimpleDateFormat("yyyyMMdd").format(new Date().getTime()) + ".csv";
+
+         List<String> allRecords;
+
+        allRecords = new ArrayList<>();
+
+         Log.i(TAG,"Exporting log");
+
+        String state = Environment.getExternalStorageState();
+        if (!Environment.MEDIA_MOUNTED.equals(state)) {
+            return false;
+        }
+        else {
+            //We use the Download directory for saving our .csv file.
+            File exportDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            if (!exportDir.exists()) {
+                exportDir.mkdirs();
+            }
+
+            File file;
+
+
+            PrintStream printStream = null;
+            try {
+
+                file = new File(exportDir, filename);
+                file.createNewFile();
+                printStream = new PrintStream(new FileOutputStream(file));
+
+                /**This is our database connector class that reads the data from the database.
+                 * The code of this class is omitted for brevity.
+                 */
+                SQLiteDatabase db = this.getReadableDatabase(); //open the database for reading
+
+                /**Let's read the first table of the database.
+                 * getFirstTable() is a method in our DBCOurDatabaseConnector class which retrieves a Cursor
+                 * containing all records of the table (all fields).
+                 * The code of this class is omitted for brevity.
+                 */
+
+                Cursor cursor = getLog(true, true, true, true, true);
+
+                //Write the name of the table and the name of the columns (comma separated values) in the .csv file.
+
+                printStream.println("TIMESTAMP,PACKAGE_NAME,UID,VERSION,PROTOCOL,SADDR,SPORT,DADDR, DPORT,DNAME,APP_NAME,DATA");
+                while (cursor.moveToNext()) {
+
+
+                    long time = cursor.getLong(cursor.getColumnIndex("time"));
+                    final String packagename = cursor.getString(cursor.getColumnIndex("packageName"));
+                    final int uid = (cursor.isNull(cursor.getColumnIndex("uid")) ? -1 : cursor.getInt(cursor.getColumnIndex("uid")));
+                    int version = (cursor.getInt(cursor.getColumnIndex("version")));
+                    int protocol = cursor.getInt(cursor.getColumnIndex("protocol"));
+                    final String saddr = cursor.getString(cursor.getColumnIndex("saddr"));
+                    final int sport = (cursor.isNull(cursor.getColumnIndex("sport")) ? -1 : cursor.getInt(cursor.getColumnIndex("sport")));
+                    final String daddr = cursor.getString(cursor.getColumnIndex("daddr"));
+                    final int dport = (cursor.isNull(cursor.getColumnIndex("dport")) ? -1 : cursor.getInt(cursor.getColumnIndex("dport")));
+                   String dname = cursor.getString(cursor.getColumnIndex("dname"));
+
+                    if(dname == null){
+
+                        dname = "unknown";
+                    }
+                    final String data = cursor.getString(cursor.getColumnIndex("data"));
+
+
+                        if(packagename != null) {
+
+                            //get the label
+                            List<String> appnames = getApplicationNames(uid, context);
+
+                            /**Create the line to write in the .csv file.
+                             * We need a String where values are comma separated.
+                             * The field date (Long) is formatted in a readable text. The amount field
+                             * is converted into String.
+                             */
+                            String record = "" + time + "," + packagename + "," + uid + "," + version + "," + protocol + "," + saddr + "," + sport + "," + daddr +
+                                    "," + dport + "," + dname + "," + appnames.get(0) + "," + data;
+                            printStream.println(record); //write the record in the .csv file
+
+                            String extRecord = "" + packagename + "," + version + "," + protocol + "," + daddr +
+                                    "," + dport + "," + dname + "," + appnames.get(0) + "," + data;
+
+                            allRecords.add(new String(extRecord));
+                        }
+
+                }
+
+
+
+                cursor.close();
+
+                List<String> noDups = new ArrayList<String>(new LinkedHashSet<String>(allRecords));
+
+                Collections.sort(noDups);
+                String exportFilename = "netguard_export_log_" + new SimpleDateFormat("yyyyMMdd").format(new Date().getTime()) + ".csv";
+                File file1 = new File(exportDir, exportFilename);
+                file1.createNewFile();
+                PrintStream printStream1 = new PrintStream(new FileOutputStream(file1));
+                printStream1.println("PACKAGE_NAME,VERSION,PROTOCOL,DADDR, DPORT,DNAME,APP_NAME,DATA");
+                for(int x = 0; x<noDups.size();x++){
+
+                    printStream1.println(noDups.get(x));
+                }
+
+                printStream1.close();
+            } catch (Exception exc) {
+                Log.e(TAG, exc.toString() + "\n" + Log.getStackTraceString(exc));
+                return false;
+            } finally {
+                if (printStream != null) printStream.close();
+            }
+
+            //If there are no errors, return true.
+            return true;
+        }
+
+    }
+
+
+    public void generateHtmlAppReports(String exportFile){
+
+        //open the export file and for each unique app generate a pretty
+        //report that shows network activity, icon, and permissions
+
+
+
+    }
+
+
 }

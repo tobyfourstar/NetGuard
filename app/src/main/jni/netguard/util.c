@@ -152,6 +152,27 @@ int32_t get_local_port(const int sock) {
         return ntohs(sin.sin_port);
 }
 
+int containsAscii(uint8_t *data){
+
+        int x = 0;
+
+
+
+        while (x<92) {
+            if ((data[x] < 0x80) && (data[x] != 0x3f ) && (data[x+8] != 0x0d)) //non print or end of URL
+                /* 0xxxxxxx */
+                x++;
+            else {
+                return x;
+            }
+        }
+
+    return x;
+
+
+
+}
+
 int is_event(int fd, short event) {
     struct pollfd p;
     p.fd = fd;

@@ -1131,6 +1131,9 @@ void write_rst(const struct arguments *args, struct tcp_session *cur) {
 ssize_t write_tcp(const struct arguments *args, const struct tcp_session *cur,
                   const uint8_t *data, size_t datalen,
                   int syn, int ack, int fin, int rst) {
+
+
+
     size_t len;
     u_int8_t *buffer;
     struct tcphdr *tcp;
@@ -1244,7 +1247,7 @@ ssize_t write_tcp(const struct arguments *args, const struct tcp_session *cur,
               cur->version == 4 ? &cur->daddr.ip4 : &cur->daddr.ip6, dest, sizeof(dest));
 
     // Send packet
-    log_android(ANDROID_LOG_DEBUG,
+    log_android(ANDROID_LOG_INFO,
                 "TCP sending%s%s%s%s to tun %s/%u seq %u ack %u data %u",
                 (tcp->syn ? " SYN" : ""),
                 (tcp->ack ? " ACK" : ""),
@@ -1262,7 +1265,7 @@ ssize_t write_tcp(const struct arguments *args, const struct tcp_session *cur,
         if (pcap_file != NULL)
             write_pcap_rec(buffer, (size_t) res);
     } else
-        log_android(ANDROID_LOG_ERROR, "TCP write%s%s%s%s data %d error %d: %s",
+        log_android(ANDROID_LOG_DEBUG, "TCP write%s%s%s%s data %d error %d: %s",
                     (tcp->syn ? " SYN" : ""),
                     (tcp->ack ? " ACK" : ""),
                     (tcp->fin ? " FIN" : ""),
